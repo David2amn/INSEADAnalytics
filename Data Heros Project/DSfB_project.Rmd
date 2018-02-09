@@ -1,0 +1,107 @@
+---
+title: "Data Science for Business - Project"
+author: "Broersen Doortje, Prickaerts Charles, Van Rijn Rens, Feutray Charles, Ammann David"
+output:
+  html_document:
+    css: ~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsStyles/default.css
+    theme: paper
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  pdf_document:
+    includes:
+      in_header: ~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsStyles/default.sty
+always_allow_html: yes
+---
+
+
+```{r echo=FALSE, message=FALSE}
+make_pdf_file = 0 # SET THIS TO 1 IF WE COMPILE PDF FILE, 0 OTHERWISE (FOR HTML)
+
+source("~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsLibraries/library.R")
+source("~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsLibraries/heatmapOutput.R")
+
+# Package options
+ggthemr('fresh')  # ggplot theme
+opts_knit$set(progress=FALSE, verbose=FALSE)
+opts_chunk$set(echo=FALSE, fig.align="center", fig.width=10, fig.height=6.2)
+options(knitr.kable.NA = '')
+```
+
+# The Business Context
+A Taiwan-based credit card issuer wants to better predict the likelihood of default for its customers, as well as identify the key drivers that determine this likelihood. This would inform the issuer's decisions on who to give a credit card to and what credit limit to provide. It would also help the issuer have a better understanding of their current and potential customers, which would inform their future strategy, including their planning of offering targeted credit products to their customers. 
+
+
+<!--
+```{r echo=FALSE, message=FALSE}
+# Please ENTER the filename
+datafile_name = "~/00_INSEAD/03_P3/DSfB/Projects/Nomad2018/train.csv"
+ProjectData <- read.csv(datafile_name)
+# We turn the data into data.matrix class so that we can easier manipulate it
+ProjectData <- data.matrix(ProjectData)
+str(ProjectData)
+
+# Please ENTER the dependent variable (class).
+# Please use numbers, not column names. E.g., 82 uses the 82nd column as the dependent variable.
+# You need to make sure that dependent variable takes only two values: 0 and 1.
+dependent_variable = 14
+
+# Please ENTER the attributes to use as independent variables. 
+# Please use numbers, not column names. E.g., c(1:5, 7, 8) uses columns 1,2,3,4,5,7,8.
+independent_variables = c(2:12) # use all the available attributes
+
+dependent_variable = unique(sapply(dependent_variable,function(i) min(ncol(ProjectData), max(i,1))))
+independent_variables = unique(sapply(independent_variables,function(i) min(ncol(ProjectData), max(i,1))))
+
+if (length(unique(ProjectData[,dependent_variable])) !=2){
+  cat("\n*****\n BE CAREFUL, THE DEPENDENT VARIABLE TAKES MORE THAN 2 VALUES")
+  cat("\nSplitting it around its median...\n*****\n ")
+  new_dependent = ProjectData[,dependent_variable] >= median(ProjectData[,dependent_variable])
+  ProjectData[,dependent_variable] <- 1*new_dependent
+}
+
+# Please ENTER the probability threshold above which an observation is predicted as class 1:
+Probability_Threshold = 0.5 # between 0 and 1
+
+# Please ENTER the percentage of data used for estimation
+estimation_data_percent = 80
+validation_data_percent = 10
+test_data_percent = 100-estimation_data_percent-validation_data_percent
+
+# Please ENTER 1 if you want to randomly split the data in estimation and validation/test
+random_sampling = 1
+
+# Tree parameter
+# Please ENTER the tree (CART) complexity control cp (e.g. 0.0001 to 0.02, depending on the data)
+CART_cp = 0.0025
+CART_control = rpart.control(cp = CART_cp)
+
+# Please ENTER the words for the business interpretation of class 1 and class 0:
+class_1_interpretation = "default"
+class_0_interpretation = "no default"
+
+# Please ENTER the profit/cost values for correctly classified and misclassified data:
+actual_1_predict_1 = 0
+actual_1_predict_0 = -100000
+actual_0_predict_1 = 0
+actual_0_predict_0 = 20000
+
+Profit_Matrix = matrix(c(actual_1_predict_1, actual_0_predict_1, actual_1_predict_0, actual_0_predict_0), ncol=2)
+colnames(Profit_Matrix) <- c(paste("Predict 1 (", class_1_interpretation, ")", sep = ""), paste("Predict 0 (", class_0_interpretation, ")", sep = ""))
+rownames(Profit_Matrix) <- c(paste("Actual 1 (", class_1_interpretation, ")", sep = ""), paste("Actual 0 (", class_0_interpretation, ")", sep = ""))
+
+# Please ENTER the maximum number of observations to show in the report and slides 
+# (DEFAULT is 50. If the number is large the report and slides may not be generated - very slow or will crash!!)
+max_data_report = 10 
+```
+-->
+
+# The Business Context
+A Taiwan-based credit card issuer wants to better predict the likelihood of default for its customers, as well as identify the key drivers that determine this likelihood. This would inform the issuer's decisions on who to give a credit card to and what credit limit to provide. It would also help the issuer have a better understanding of their current and potential customers, which would inform their future strategy, including their planning of offering targeted credit products to their customers. 
+
+
+
+<hr>\clearpage
+
+# The Data
