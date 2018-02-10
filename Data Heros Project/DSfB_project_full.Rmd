@@ -3,7 +3,7 @@ title: "Data Science for Business Project: Nomad2018 Predicting Transparent Cond
 author: "Broersen Doortje, Prickaerts Charles, Van Rijn Rens, Feutray Charles, Ammann David"
 output:
   html_document:
-    css: ~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsStyles/default.css
+    css: ../AnalyticsStyles/default.css
     theme: paper
     toc: yes
     toc_float:
@@ -11,15 +11,15 @@ output:
       smooth_scroll: yes
   pdf_document:
     includes:
-      in_header: ~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsStyles/default.sty
+      in_header: ../AnalyticsStyles/default.sty
 always_allow_html: yes
 ---
 
 ```{r echo=FALSE, message=FALSE}
 make_pdf_file = 0 # SET THIS TO 1 IF WE COMPILE PDF FILE, 0 OTHERWISE (FOR HTML)
 
-source("~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsLibraries/library.R")
-source("~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsLibraries/heatmapOutput.R")
+source("../AnalyticsLibraries/library.R")
+source("../AnalyticsLibraries/heatmapOutput.R")
 
 # Package options
 ggthemr('fresh')  # ggplot theme
@@ -27,7 +27,14 @@ opts_knit$set(progress=FALSE, verbose=FALSE)
 opts_chunk$set(echo=FALSE, fig.align="center", fig.width=10, fig.height=6.2)
 options(knitr.kable.NA = '')
 # install.packages("pacman") / in case you do not have this program yet
+if("pacman" %in% rownames(installed.packages()) == FALSE) {install.packages("pacman")} 
 pacman::p_load("caret","ROCR","lift","glmnet","MASS","e1071") 
+#Other packages
+install.packages("hexbin")
+library(hexbin)
+library(ggplot2)
+
+
 ```
 
 # Project Background
@@ -42,9 +49,9 @@ The team will participate in the Kaggle competition “Nomad2018 Predicting Tran
 
 ```{r echo=FALSE, message=FALSE}
 datafile_name_train = "../Data Heros Project/Data/train.csv"
-datafile_name_test = "../Data Heros Project/Data/test.csv"
+datafile_name_submission = "../Data Heros Project/Data/submission.csv"
 materials.data.train<-read.csv(datafile_name_train, header=TRUE, sep=",")
-materials.data.test<-read.csv(datafile_name_test, header=TRUE, sep=",")
+materials.data.submission<-read.csv(datafile_name_submission, header=TRUE, sep=",")
 
 # Please ENTER the maximum number of observations to show in the report and slides 
 # (DEFAULT is 50. If the number is large the report and slides may not be generated - very slow or will crash!!)
@@ -124,20 +131,142 @@ plot.default(materials.data.train$percent_atom_al ~ materials.data.train$percent
 plot.default(materials.data.train$percent_atom_in ~ materials.data.train$percent_atom_ga)
 ```
 
-#Data overview for test data
-The statistics of our test data looks like this:
+#Data overview for submission data
+The statistics of our submission data looks like this:
 
 ```{r echo=FALSE}
-knitr::kable(round(my_summary(materials.data.test),2))
+knitr::kable(round(my_summary(materials.data.submission),2))
 
 par(mfrow=c(2,2))
-hist(materials.data.test$spacegroup)
-hist(materials.data.test$number_of_total_atoms)
-plot.default(materials.data.test$percent_atom_al ~ materials.data.test$percent_atom_ga)
-plot.default(materials.data.test$percent_atom_in ~ materials.data.test$percent_atom_ga)
+hist(materials.data.submission$spacegroup)
+hist(materials.data.submission$number_of_total_atoms)
+plot.default(materials.data.submission$percent_atom_al ~ materials.data.submission$percent_atom_ga)
+plot.default(materials.data.submission$percent_atom_in ~ materials.data.submission$percent_atom_ga)
 par(mfrow=c(2,2))
-hist(materials.data.test$percent_atom_al)
-hist(materials.data.test$percent_atom_ga)
-hist(materials.data.test$percent_atom_in)
-plot.default(materials.data.test$spacegroup)
+hist(materials.data.submission$percent_atom_al)
+hist(materials.data.submission$percent_atom_ga)
+hist(materials.data.submission$percent_atom_in)
+plot.default(materials.data.submission$spacegroup)
 ```
+
+#First iteration of regression models 
+
+##Variable reclassification and creationg of training/validation/submissioning sets 
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+#Summary info of variables 
+str(materials.data.train)
+
+## Fixing incorrectly classified data types ##
+materials.data.train$spacegroup <- as.factor(materials.data.train$spacegroup)
+
+#Summary info of variables 
+str(materials.data.train)
+
+# Creating test
+set.seed(500) #set a random number generation seed to ensure that the split is the same everytime
+inTrain <- createDataPartition(y = materials.data.train$formation_energy_ev_natom,p = 1918/2400, list = FALSE)
+training <- materials.data.train[ inTrain,]
+testing <- materials.data.train[ -inTrain,]
+
+```
+
+##Multiple linear regression model (lm) on the training data [Formation]
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+#Run model and plot results [formation]
+fit.f<-lm(formation_energy_ev_natom~.-bandgap_energy_ev, data=training)
+predicted.formation<-predict(fit.f,testing) 
+plot(predicted.formation ~ testing$formation_energy_ev_natom)
+
+#Run model and plot results [formation]
+fit.b<-lm(bandgap_energy_ev~.-formation_energy_ev_natom, data=training)
+predicted.bandgap<-predict(fit.b,testing) 
+plot(predicted.bandgap ~ testing$bandgap_energy_ev)
+
+#Calculate and show percentage error
+percent.errors.f <- sqrt(mean((log(predicted.formation+1) -log(testing$formation_energy_ev_natom+1))^2))
+percent.errors.b <- sqrt(mean((log(predicted.bandgap+1) -log(testing$bandgap_energy_ev+1))^2))
+mean.score<- (percent.errors.f+percent.errors.b) /2
+paste0("score is ",mean.score)
+
+```
+
+##Multiple log regression model on the training data [Formation+Bandgap]
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+#Run model and plot results [formation]
+fit.f.<-glm(log(formation_energy_ev_natom+1)~.-bandgap_energy_ev, data=training, family=gaussian(link = "identity"))
+predicted.formation<-exp(predict(fit.f,testing) )-1
+plot(predicted.formation ~ testing$formation_energy_ev_natom)
+
+#Run model and plot results [formation]
+fit.b<-glm(log(bandgap_energy_ev+1)~.-formation_energy_ev_natom, data=training, family=gaussian(link = "identity"))
+predicted.bandgap<-exp(predict(fit.b,testing))-1
+plot(predicted.bandgap ~ testing$bandgap_energy_ev)
+
+#Calculate and show percentage error
+percent.errors.f <- sqrt(mean((log(predicted.formation+1) -log(testing$formation_energy_ev_natom+1))^2))
+percent.errors.b <- sqrt(mean((log(predicted.bandgap+1) -log(testing$bandgap_energy_ev+1))^2))
+mean.score<- (percent.errors.f+percent.errors.b) /2
+paste0("score is ",mean.score)
+
+```
+
+##Adding Stepwise 
+
+``` {r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+#Run model and plot results [formation]
+fit.f<-lm(formation_energy_ev_natom~.-bandgap_energy_ev, data=training)
+fit.f.AIC<-stepAIC(fit.f,direction = c("both"),trace = 1)
+predicted.formation<-predict(fit.f.AIC,testing) 
+plot(predicted.formation ~ testing$formation_energy_ev_natom)
+
+#Run model and plot results [formation]
+fit.b<-lm(bandgap_energy_ev~.-formation_energy_ev_natom, data=training)
+fit.b.AIC<-stepAIC(fit.b,direction = c("both"),trace = 1)
+predicted.bandgap<-predict(fit.b.AIC,testing) 
+plot(predicted.bandgap ~ testing$bandgap_energy_ev)
+
+#Calculate and show percentage error
+percent.errors.f <- sqrt(mean((log(predicted.formation+1) -log(testing$formation_energy_ev_natom+1))^2))
+percent.errors.b <- sqrt(mean((log(predicted.bandgap+1) -log(testing$bandgap_energy_ev+1))^2))
+mean.score<- (percent.errors.f+percent.errors.b) /2
+paste0("score is ",mean.score)
+
+```
+
+##Including dimension reduction [Not working]
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+#All data is confirmed to be metric
+
+#Data scaling 
+training.scaled=apply(training,2, function(r){ 
+  if (sd(r)!=0) {  
+    res=(r-mean(r))/sd(r)  
+    } else {  
+      res=0*r; res 
+      } 
+  }) 
+
+#Choose the number of factors
+Package: psych 
+Package: FactoMineR 
+
+UnRotated_Results<-principal(training, nfactors=ncol(training), rotate="none”, score=TRUE) 
+
+Variance_Explained_Table_results<-PCA(ProjectDataFactor, graph=FALSE) 
+Variance_Explained_Table<-Variance_Explained_Table_results$eig 
+
+``` 
