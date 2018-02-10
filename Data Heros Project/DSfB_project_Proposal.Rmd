@@ -1,9 +1,9 @@
 ---
-title: "Data Science for Business Project: Nomad2018 Predicting Transparent Conductors"
+title: "Data Science for Business Project: Predicting Transparent Conductors"
 author: "Broersen Doortje, Prickaerts Charles, Van Rijn Rens, Feutray Charles, Ammann David"
 output:
   html_document:
-    css: ~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsStyles/default.css
+    css: ../AnalyticsStyles/default.css
     theme: paper
     toc: yes
     toc_float:
@@ -11,15 +11,15 @@ output:
       smooth_scroll: yes
   pdf_document:
     includes:
-      in_header: ~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsStyles/default.sty
+      in_header: ../AnalyticsStyles/default.sty
 always_allow_html: yes
 ---
 
 ```{r echo=FALSE, message=FALSE}
 make_pdf_file = 0 # SET THIS TO 1 IF WE COMPILE PDF FILE, 0 OTHERWISE (FOR HTML)
 
-source("~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsLibraries/library.R")
-source("~/00_INSEAD/03_P3/DSfB/Projects/INSEADAnalytics/AnalyticsLibraries/heatmapOutput.R")
+source("../AnalyticsLibraries/library.R")
+source("../AnalyticsLibraries/heatmapOutput.R")
 
 # Package options
 ggthemr('fresh')  # ggplot theme
@@ -30,21 +30,45 @@ options(knitr.kable.NA = '')
 pacman::p_load("caret","ROCR","lift","glmnet","MASS","e1071") 
 ```
 
-# Project Background
+# Project Overview
+The team will participate in the Kaggle competition “Nomad2018 Predicting Transparent Conductors” which will end on February 15, 2018.
+
+## Background
 Transparent conductors are critical to improve the generation and utilization of energy. Better use of energy is crucial to mitigate environmental challenges imposed by a growing demand of energy. Big limitation in optimization of conductors is that it is hard to predict which potential materials are most promising in terms of bandwith energy and formation energy. 
 
-# Project objectives
-The team will participate in the Kaggle competition “Nomad2018 Predicting Transparent Conductors” which will end on February 15, 2018.
-* Predict the key properties of novel transparent semiconductors
-* Facilitate the discovery of new transparent conductors by predicting bandwith energy and formation energy of promising materials, using other known characteristics of materials
-* Compete and achieve top 50% rank in the Kaggle competition 
+## Objectives 
+The objective of this project is to predict the key properties of novel transparent semiconductors. This will facilitate the discovery of new transparent conductors by predicting bandwith energy and formation energy of promising materials, using other known characteristics of materials. As a consequence, R&D cost for the transparent semiconductor manufacture can be reduced as they can foucs on the most promising combination.
+A second objective of the project is to compete and achieve a top 50% rank in the Kaggle competition. 
+
+## Approach
+We will follow a 3-step approach to predict the Bandgap Energy and the Formation Energy value of the submission data:
+
+_1. Data inspection_
+
+ + Explore key parameters of the dataset (size, dimensions, correlations)
+ + Interpret components
+ + Data visualization 
+
+_2. Classifier and Feature Engineering_
+
+* Identify relevant classifying techniques
+* Feature engineering: Identify potential new variables  
+* Explore the relevance of dimensionality reduction
+
+_3. Classifier selection and prediction submission_
+
+ + Determine criteria to select best model to use for final predictions
+ + Produce predictions and share output through Kaggle
+ + Create Notebook file for submission
+
+Since there are two dependent variables, our hypothesis is to run two indepentend models to achieve the best results in order to predict the two dependent variables. 
 
 
 ```{r echo=FALSE, message=FALSE}
 datafile_name_train = "../Data Heros Project/Data/train.csv"
-datafile_name_test = "../Data Heros Project/Data/test.csv"
+datafile_name_submission = "../Data Heros Project/Data/submission.csv"
 materials.data.train<-read.csv(datafile_name_train, header=TRUE, sep=",")
-materials.data.test<-read.csv(datafile_name_test, header=TRUE, sep=",")
+materials.data.submission<-read.csv(datafile_name_submission, header=TRUE, sep=",")
 
 # Please ENTER the maximum number of observations to show in the report and slides 
 # (DEFAULT is 50. If the number is large the report and slides may not be generated - very slow or will crash!!)
@@ -60,12 +84,12 @@ dependent_variable = c(13:14)
 independent_variables = c(1:12) # use all the available attributes
 
 dependent_variable = unique(sapply(dependent_variable,function(i) min(ncol(materials.data.train), max(i,1))))
-independent_variables = unique(sapply(independent_variables,function(i) min(ncol(materials.data.train), max(i,1))))
+independent_variables = unique(sapply(independent_variables,function(i) min(ncol(materials.data.submission), max(i,1))))
 ```
 
 <hr>\clearpage
 
-# The Data
+# Data Overview
 Data Source: https://www.kaggle.com/c/nomad2018-predict-transparent-conductors/data
 The data was provided by the Kaggle challenge provider, including the following data description.
 
@@ -90,54 +114,113 @@ Bandgap_energy_ev          | Bandgap energy (an important property for optoelect
 
 A domain expert will understand the physical meaning of the above information but those with a data mining background may simply use the data as input for their models.
 
-Good data analytics start with good contextual knowledge as well as a simple statistical and visual exploration of the data. Let's look into the data for a few material combinations.
-This is how the first 4 out of the total of `r nrow(materials.data.train)` rows look like (transposed, for convenience):
+The simple statistical and visual exploration of the data for the first 4 out of the total of `r nrow(materials.data.train)` rows look like (transposed, for convenience):
 
 ```{r echo=FALSE, message=FALSE, prompt=FALSE, results='asis'}
 knitr::kable({
-  df <- t(head(materials.data.train,4))
+  df <- t(head(materials.data.train,5))
   colnames(df) <- sprintf("%02d", 1:ncol(df))
   df
 })
 ```
 
-#Data overview for train data
+## Train Data
 The statistics of our train data looks like this:
 
 ```{r echo=FALSE}
 knitr::kable(round(my_summary(materials.data.train),2))
-
-par(mfrow=c(2,2))
-hist(materials.data.train$formation_energy_ev_natom)
-hist(materials.data.train$bandgap_energy_ev)
-plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$formation_energy_ev_natom)
-hist(materials.data.train$spacegroup)
-par(mfrow=c(2,2))
-hist(materials.data.train$number_of_total_atoms)
-hist(materials.data.train$percent_atom_al)
-hist(materials.data.train$percent_atom_ga)
-hist(materials.data.train$percent_atom_in)
-par(mfrow=c(2,2))
-plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$number_of_total_atoms)
-plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$number_of_total_atoms)
-plot.default(materials.data.train$percent_atom_al ~ materials.data.train$percent_atom_ga)
-plot.default(materials.data.train$percent_atom_in ~ materials.data.train$percent_atom_ga)
 ```
 
-#Data overview for test data
-The statistics of our test data looks like this:
+The indepentend variables ID and spacegroup are factors, wheras the other indepentend variables are normal integers. The data seems to be very clean, which was to expect as the it is provided by the challange maker.  
+
+The visualizaiton of the train data shows some interesing insights, which are pointed out in the following.
+```{r echo=FALSE}
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,1))
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$formation_energy_ev_natom, xlab ="Band Energy", ylab = "Formation energy")
+#hist(materials.data.train$formation_energy_ev_natom)
+#hist(materials.data.train$bandgap_energy_ev)
+```
+The two dependent variables formation_energy_ev and bandgap_energy_ev seem to have a negative correlation to each other: only one of the two can be high. However, smaller values for both are possible.
 
 ```{r echo=FALSE}
-knitr::kable(round(my_summary(materials.data.test),2))
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,3))
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$percent_atom_al, ylab ="Band Energy", xlab = "Al percentage")
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$percent_atom_ga, ylab ="Band Energy", xlab = "Ga percentage")
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$percent_atom_in, ylab ="Band Energy", xlab = "In percentage")
+title(main = "Bandgap Energy Dependency on Atoms", outer = TRUE)
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,3))
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$percent_atom_al, ylab ="Formation Energy", xlab = "Al percentage")
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$percent_atom_ga, ylab ="Formation Energy", xlab = "Ga percentage")
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$percent_atom_in, ylab ="Formation Energy", xlab = "In percentage")
+title(main = "Formation Energy Dependency on Atoms", outer = TRUE)
 
-par(mfrow=c(2,2))
-hist(materials.data.test$spacegroup)
-hist(materials.data.test$number_of_total_atoms)
-plot.default(materials.data.test$percent_atom_al ~ materials.data.test$percent_atom_ga)
-plot.default(materials.data.test$percent_atom_in ~ materials.data.test$percent_atom_ga)
-par(mfrow=c(2,2))
-hist(materials.data.test$percent_atom_al)
-hist(materials.data.test$percent_atom_ga)
-hist(materials.data.test$percent_atom_in)
-plot.default(materials.data.test$spacegroup)
+#hist(materials.data.train$percent_atom_al)
+#hist(materials.data.train$percent_atom_ga)
+#hist(materials.data.train$percent_atom_in)
 ```
+Plotting the two dependent variables against the atoms percentage, a trend for the bandgap energy can be observed. The distribution of the formation energy is more homogenous with increasing percentage of each atoms. For the formation energy, there are some outliers.
+
+```{r echo=FALSE}
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,3))
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$lattice_vector_1_ang, ylab ="Band Energy", xlab = "Vector lvl 1")
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$lattice_vector_2_ang, ylab ="Band Energy", xlab = "Vector lvl 2")
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$lattice_vector_3_ang, ylab ="Band Energy", xlab = "Vector lvl 3")
+title(main = "Bandgap Energy Dependency on Lattice Vector", outer = TRUE)
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,3))
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_vector_1_ang, ylab ="Formation Energy", xlab = "Vector lvl 1")
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_vector_2_ang, ylab ="Formation Energy", xlab = "Vector lvl 2")
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_vector_3_ang, ylab ="Formation Energy", xlab = "Vector lvl 3")
+title(main = "Formation Energy Dependency on Lattice Vector", outer = TRUE)
+```
+Plotting the dependent variables vs. the lattice vector, it seems that the data clusters in distinct groups, with big gabs in between. Certain values for formaiton energy are outliers that are clearly above the values. 
+
+```{r echo=FALSE}
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,3))
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$lattice_angle_alpha_degree, ylab ="Band Energy", xlab = "Alpha angle")
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$lattice_angle_beta_degree, ylab ="Band Energy", xlab = "Beta angle")
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$lattice_angle_gamma_degree, ylab ="Band Energy", xlab = "Gamma angle")
+title(main = "Bandgap Energy Dependency on Angles", outer = TRUE)
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,3))
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_angle_alpha_degree, ylab ="Formation Energy", xlab = "Alpha angle")
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_angle_beta_degree, ylab ="Formation Energy", xlab = "Beta angle")
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_angle_gamma_degree, ylab ="Formation Energy", xlab = "Gamma angle")
+title(main = "Formation Energy Dependency on Angles", outer = TRUE)
+```
+Plotting the dependent variable vs. the angle, a simliar groupging can be observed for both dependent variables, the bandgap and formation energy. It seems like that for the gamma angle only three different groups exist. In our further analysis, we have to look into these variables in more details.
+
+## Submission Data
+The statistics of our submisison data looks like this:
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.submission),2))
+
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,2))
+hist(materials.data.train$spacegroup, xlab ="Spacegroup", main = "")
+hist(materials.data.train$number_of_total_atoms, xlab = "Number of total atoms", main = "")
+title(main = "Train Data", outer = TRUE)
+par(oma=c(0,0,2,0))
+par(mfrow=c(1,2))
+hist(materials.data.submission$spacegroup, xlab ="Spacegroup", main = "")
+hist(materials.data.submission$number_of_total_atoms, xlab = "Number of total atoms", main = "")
+title(main = "Submission Data", outer = TRUE)
+
+#par(mfrow=c(2,2))
+#hist(materials.data.test$spacegroup)
+#hist(materials.data.test$number_of_total_atoms)
+#plot.default(materials.data.test$percent_atom_al ~ materials.data.test$percent_atom_ga)
+#plot.default(materials.data.test$percent_atom_in ~ materials.data.test$percent_atom_ga)
+#par(mfrow=c(2,2))
+#hist(materials.data.test$percent_atom_al)
+#hist(materials.data.test$percent_atom_ga)
+#hist(materials.data.test$percent_atom_in)
+#plot.default(materials.data.test$spacegroup)
+```
+Comparing the submission data (i.e. the data to predict the bandgap as well as the formaiton energy) to the train data, no significant differences in the independent variables can be seen. Hence, we can use this data for our prediction models without further adjustments.
