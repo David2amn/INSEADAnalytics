@@ -1,0 +1,497 @@
+---
+title: "Data Science for Business Project: Nomad2018 Predicting Transparent Conductors"
+author: "Broersen Doortje, Prickaerts Charles, Van Rijn Rens, Feutray Charles, Ammann David"
+output:
+  html_document:
+    css: ../AnalyticsStyles/default.css
+    theme: paper
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  pdf_document:
+    includes:
+      in_header: ../AnalyticsStyles/default.sty
+always_allow_html: yes
+---
+
+```{r echo=FALSE, message=FALSE}
+make_pdf_file = 0 # SET THIS TO 1 IF WE COMPILE PDF FILE, 0 OTHERWISE (FOR HTML)
+
+source("../AnalyticsLibraries/library.R")
+source("../AnalyticsLibraries/heatmapOutput.R")
+
+# Package options
+ggthemr('fresh')  # ggplot theme
+opts_knit$set(progress=FALSE, verbose=FALSE)
+opts_chunk$set(echo=FALSE, fig.align="center", fig.width=10, fig.height=6.2)
+options(knitr.kable.NA = '')
+# install.packages("pacman") / in case you do not have this program yet
+if("pacman" %in% rownames(installed.packages()) == FALSE) {install.packages("pacman")} 
+pacman::p_load("caret","ROCR","lift","glmnet","MASS","e1071") 
+#Other packages
+install.packages("hexbin")
+library(hexbin)
+library(ggplot2)
+
+
+```
+
+# Project Background
+Transparent conductors are critical to improve the generation and utilization of energy. Better use of energy is crucial to mitigate environmental challenges imposed by a growing demand of energy. Big limitation in optimization of conductors is that it is hard to predict which potential materials are most promising in terms of bandwith energy and formation energy. 
+
+# Project objectives
+The team will participate in the Kaggle competition “Nomad2018 Predicting Transparent Conductors” which will end on February 15, 2018.
+* Predict the key properties of novel transparent semiconductors
+* Facilitate the discovery of new transparent conductors by predicting bandwith energy and formation energy of promising materials, using other known characteristics of materials
+* Compete and achieve top 50% rank in the Kaggle competition 
+
+
+```{r echo=FALSE, message=FALSE}
+datafile_name_train = "../Data Heros Project/Data/train.csv"
+datafile_name_submission = "../Data Heros Project/Data/submission.csv"
+materials.data.train<-read.csv(datafile_name_train, header=TRUE, sep=",")
+materials.data.submission<-read.csv(datafile_name_submission, header=TRUE, sep=",")
+
+# Please ENTER the maximum number of observations to show in the report and slides 
+# (DEFAULT is 50. If the number is large the report and slides may not be generated - very slow or will crash!!)
+max_data_report = 10 
+
+# Please ENTER the dependent variable (class).
+# Please use numbers, not column names. E.g., 82 uses the 82nd column as the dependent variable.
+# You need to make sure that dependent variable takes only two values: 0 and 1.
+dependent_variable = c(13:14)
+
+# Please ENTER the attributes to use as independent variables. 
+# Please use numbers, not column names. E.g., c(1:5, 7, 8) uses columns 1,2,3,4,5,7,8.
+independent_variables = c(1:12) # use all the available attributes
+
+dependent_variable = unique(sapply(dependent_variable,function(i) min(ncol(materials.data.train), max(i,1))))
+independent_variables = unique(sapply(independent_variables,function(i) min(ncol(materials.data.train), max(i,1))))
+```
+
+<hr>\clearpage
+
+# The Data
+Data Source: https://www.kaggle.com/c/nomad2018-predict-transparent-conductors/data
+The data was provided by the Kaggle challenge provider, including the following data description.
+
+High-quality data are provided for 3,000 materials that show promise as transparent conductors. The following information has been included:
+
+Name                       | Description
+:--------------------------|:--------------------------------------------------------------------
+ID                         | ID of each combination
+Spacegroup                 | A label identifying the symmetry of the materia
+Number_of_total_number     | Total number of Al, Ga, In and O atoms in the unit cell 
+Percent_atom_al            | Percentage of Al atoms in the structure
+Percent_atom_ga            | Percentage of Ga atoms in the structure
+Percent_atom_in            | Percentage of In atoms in the structure
+Lattice_vector_1_ang       | Lattice vectors lv1 (which are lengths given in units of angstroms (10−1010−10 meters) 
+Lattice_vector_2_ang       | Lattice vectors lv2 (which are lengths given in units of angstroms (10−1010−10 meters)
+Lattice_vector_3_ang       | Lattice vectors lv3 (which are lengths given in units of angstroms (10−1010−10 meters)
+Lattice_angle_alpha_degree | Lattice angle α (angles in degrees between 0° and 360°)
+Lattice_angle_beta_degree  | Lattice angle β (angles in degrees between 0° and 360°)
+Lattice_angle_gamma_degree | Lattice angle γ (angles in degrees between 0° and 360°)
+Formation_energy_ev_natom  | Formation energy (an important indicator of the stability of a material)
+Bandgap_energy_ev          | Bandgap energy (an important property for optoelectronic applications)
+
+A domain expert will understand the physical meaning of the above information but those with a data mining background may simply use the data as input for their models.
+
+Good data analytics start with good contextual knowledge as well as a simple statistical and visual exploration of the data. Let's look into the data for a few material combinations.
+This is how the first 4 out of the total of `r nrow(materials.data.train)` rows look like (transposed, for convenience):
+
+```{r echo=FALSE, message=FALSE, prompt=FALSE, results='asis'}
+knitr::kable({
+  df <- t(head(materials.data.train,4))
+  colnames(df) <- sprintf("%02d", 1:ncol(df))
+  df
+})
+```
+
+#Data overview for train data
+The statistics of our train data looks like this:
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+par(mfrow=c(2,2))
+hist(materials.data.train$formation_energy_ev_natom)
+hist(materials.data.train$bandgap_energy_ev)
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$formation_energy_ev_natom)
+hist(materials.data.train$spacegroup)
+par(mfrow=c(2,2))
+hist(materials.data.train$number_of_total_atoms)
+hist(materials.data.train$percent_atom_al)
+hist(materials.data.train$percent_atom_ga)
+hist(materials.data.train$percent_atom_in)
+par(mfrow=c(2,2))
+plot.default(materials.data.train$bandgap_energy_ev ~ materials.data.train$number_of_total_atoms)
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$number_of_total_atoms)
+plot.default(materials.data.train$percent_atom_al ~ materials.data.train$percent_atom_ga)
+plot.default(materials.data.train$percent_atom_in ~ materials.data.train$percent_atom_ga)
+```
+
+#Data overview for submission data
+The statistics of our submission data looks like this:
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.submission),2))
+
+par(mfrow=c(2,2))
+hist(materials.data.submission$spacegroup)
+hist(materials.data.submission$number_of_total_atoms)
+plot.default(materials.data.submission$percent_atom_al ~ materials.data.submission$percent_atom_ga)
+plot.default(materials.data.submission$percent_atom_in ~ materials.data.submission$percent_atom_ga)
+par(mfrow=c(2,2))
+hist(materials.data.submission$percent_atom_al)
+hist(materials.data.submission$percent_atom_ga)
+hist(materials.data.submission$percent_atom_in)
+plot.default(materials.data.submission$spacegroup)
+```
+
+#First iteration of regression models 
+
+##Variable reclassification and creationg of training/validation/submissioning sets 
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+#Summary info of variables 
+str(materials.data.train)
+
+## Fixing incorrectly classified data types ##
+materials.data.train$spacegroup <- as.factor(materials.data.train$spacegroup)
+
+#Summary info of variables 
+str(materials.data.train)
+
+# Creating test
+set.seed(500) #set a random number generation seed to ensure that the split is the same everytime
+inTrain <- createDataPartition(y = materials.data.train$formation_energy_ev_natom,p = 1918/2400, list = FALSE)
+training <- materials.data.train[ inTrain,]
+testing <- materials.data.train[ -inTrain,]
+
+```
+
+##Multiple linear regression model (lm) on the training data [Formation]
+
+```{r echo=FALSE}
+
+
+#Run model and plot results [formation]
+fit.f<-lm(formation_energy_ev_natom~.-bandgap_energy_ev-id, data=training)
+predicted.f<-predict(fit.f,testing) 
+plot(predicted.f ~ testing$formation_energy_ev_natom)
+
+#Run model and plot results [bandgap]
+fit.b<-lm(bandgap_energy_ev~.-formation_energy_ev_natom-id, data=training)
+predicted.b<-predict(fit.b,testing) 
+plot(predicted.b ~ testing$bandgap_energy_ev)
+
+#Calculate and show percentage error
+percent.errors.f <- sqrt(mean((log(predicted.f+1) -log(testing$formation_energy_ev_natom+1))^2))
+percent.errors.b <- sqrt(mean((log(predicted.b+1) -log(testing$bandgap_energy_ev+1))^2))
+mean.score<- (percent.errors.f+percent.errors.b) /2
+paste0("score is ",mean.score)
+
+```
+
+##Multiple log regression model on the training data [Formation+Bandgap]
+
+```{r echo=FALSE}
+
+
+#Run model and plot results [formation]
+fit.f.log<-glm(log(formation_energy_ev_natom+1)~.-bandgap_energy_ev-id, data=training, family=gaussian(link = "identity"))
+predicted.f.log<-exp(predict(fit.f.log,testing) )-1
+plot(predicted.f.log ~ testing$formation_energy_ev_natom)
+
+#Run model and plot results [formation]
+fit.b.log<-glm(log(bandgap_energy_ev+1)~.-formation_energy_ev_natom, data=training, family=gaussian(link = "identity"))
+predicted.b.log<-exp(predict(fit.b.log,testing))-1
+plot(predicted.b.log ~ testing$bandgap_energy_ev)
+
+#Calculate and show percentage error
+percent.errors.f.log <- sqrt(mean((log(predicted.f.log+1) -log(testing$formation_energy_ev_natom+1))^2))
+percent.errors.b.log <- sqrt(mean((log(predicted.b.log+1) -log(testing$bandgap_energy_ev+1))^2))
+mean.score.log<- (percent.errors.f.log+percent.errors.b.log) /2
+paste0("score is ",mean.score.log)
+
+```
+
+##Adding Stepwise 
+
+``` {r echo=FALSE}
+
+
+#Run model and plot results [formation]
+fit.f.log.AIC<-stepAIC(fit.f.log,direction = c("both"),trace = 1)
+predicted.f.log.AIC<-predict(fit.f.log.AIC,testing) 
+plot(predicted.f.log.AIC ~ testing$formation_energy_ev_natom)
+
+#Run model and plot results [formation]
+fit.b.log.AIC<-stepAIC(fit.b.log,direction = c("both"),trace = 1)
+predicted.b.log.AIC<-predict(fit.b.log.AIC,testing) 
+plot(predicted.b.log.AIC ~ testing$bandgap_energy_ev)
+
+#Calculate and show percentage error
+percent.errors.f.log.AIC <- sqrt(mean((log(predicted.f.log.AIC+1) -log(testing$formation_energy_ev_natom+1))^2))
+percent.errors.b.log.AIC <- sqrt(mean((log(predicted.b.log.AIC+1) -log(testing$bandgap_energy_ev+1))^2))
+mean.score.log.AIC<- (percent.errors.f.log.AIC+percent.errors.b.log.AIC) /2
+paste0("Formation score is ",percent.errors.f.log.AIC)
+paste0("Bandgap score is ",percent.errors.b.log.AIC)
+paste0("Total score is ",mean.score.log.AIC)
+
+```
+
+##Including clustering [Work in progress]
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+install.packages("dbscan")
+install.packages("psych")
+install.packages("NbClust")
+install.packages("factoextra")
+install.packages("cluster")
+install.packages("dplyr")
+library(dbscan)
+library(psych)
+library(ggdendro)
+library(ggplot2)
+library(NbClust)
+library(factoextra)
+library(cluster)
+library(dplyr)
+
+# Plot a zoom on a subset of the lattice angle gamma variable (zoom on one of the bars)
+plot.default(materials.data.train$formation_energy_ev_natom ~ materials.data.train$lattice_angle_gamma_degree,xlim=c(89.992,90.003))
+
+#All data is confirmed to be metric
+
+# ID Nb of clusters for variable lattice angle gamma [Hierarchical]
+ProjectData_segment <- training[,c(12)]
+Hierarchical_Cluster_distances <- dist(ProjectData_segment, method="euclidean") 
+Hierarchical_Cluster <- hclust(Hierarchical_Cluster_distances, method="ward.D") 
+# Display dendrogram 
+ggdendrogram(Hierarchical_Cluster,rotate = FALSE,size=2)
+
+# ID # of clusters for variable lattice angle gamma [Kmean+Gap]
+kmeans_clusters <- kmeans(ProjectData_segment,centers = 3, iter.max = 2000,algorithm="Lloyd")
+clusters_lattice <- as.factor(kmeans_clusters$cluster) 
+kmeans_clusters.testing <- kmeans(testing$lattice_angle_gamma_degree,centers = 3, iter.max = 2000, algorithm="Lloyd")
+clusters_lattice.testing <- as.factor(kmeans_clusters.testing$cluster) 
+
+plot.default(clusters_lattice.testing~testing$lattice_angle_gamma_degree)
+
+testing.merge<- merge(testing,clusters_lattice.testing)
+
+# Cluster by range
+
+training.clust <- training %>% 
+  mutate(cluster_gamma = 
+           as.factor(case_when(
+             0 < lattice_angle_gamma_degree & lattice_angle_gamma_degree <= 40 ~ "1", 
+             40 < lattice_angle_gamma_degree & lattice_angle_gamma_degree <= 100 ~ "2", 
+                                  TRUE ~ "3")))
+
+testing.clust <- testing %>% 
+  mutate(cluster_gamma = 
+           as.factor(case_when(
+             0 < lattice_angle_gamma_degree & lattice_angle_gamma_degree <= 40 ~ "1", 
+             40 < lattice_angle_gamma_degree & lattice_angle_gamma_degree <= 100 ~ "2", 
+                                  TRUE ~ "3")))
+
+######## Data scaling  [does not work-ASK MARAT] ########
+training.scaled=apply(training,2, function(r){ 
+  if (sd(r)!=0) {  
+    res=(r-mean(r))/sd(r)  
+    } else {  
+      res=0*r; res 
+      } 
+  }) 
+
+#########Automatic identificatio of clusters ############ (Work in progress)
+gap_stat <- clusGap(ProjectData_segment, FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+print(gap_stat, method = "firstmax")
+plot(gap_stat, frame = FALSE, xlab = "Number of clusters k")
+
+res.nb <- NbClust(training$lattice_angle_beta_degree, distance = "euclidean",
+                  min.nc = 2, max.nc = 5, 
+                  method = "complete", index ="gap") 
+
+#Suggested number of clusters
+res.nb$Best.nc
+
+
+
+``` 
+
+## Regression with clusters 
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+install.packages("miceadds")
+install.packages("multiwayvcov")
+library(miceadds)
+library(multiwayvcov)
+library(mitools)
+
+#Run model and plot results [formation]
+fit.f.log.clust<-glm(log(formation_energy_ev_natom+1)~.
+                     -bandgap_energy_ev-id-formation_energy_pred
+                     +cluster_gamma*lattice_angle_gamma_degree + cluster_gamma*I(lattice_angle_gamma_degree^2) - cluster_gamma,
+                     data=training.clust, family=gaussian(link = "identity"))
+predicted.f.log.clust<-exp(predict(fit.f.log.clust,testing.clust) )-1
+plot(predicted.f.log.clust ~ testing.clust$formation_energy_ev_natom)
+training.clust$formation_energy_pred <- predict(fit.f.log.clust, newdata = training.clust)
+testing.clust$formation_energy_pred <- predict(fit.f.log.clust, newdata = testing.clust)
+
+summary(fit.f.log.clust)
+
+#Run model and plot results [bandgap]
+fit.b.log.clust<-glm(log(bandgap_energy_ev+1)~
+                       .-formation_energy_ev_natom-id
+                     +cluster_gamma*lattice_angle_gamma_degree + cluster_gamma*I(lattice_angle_gamma_degree^2)  - cluster_gamma,
+                     data=training.clust, family=gaussian(link = "identity"))
+predicted.b.log.clust<-exp(predict(fit.b.log.clust,testing.clust) )-1
+plot(predicted.b.log.clust ~ testing.clust$bandgap_energy_ev)
+
+summary(fit.b.log.clust)
+
+#Calculate and show percentage error
+percent.errors.f.log.clust <- sqrt(mean((log(predicted.f.log.clust+1) -log(testing.clust$formation_energy_ev_natom+1))^2))
+percent.errors.b.log.clust <- sqrt(mean((log(predicted.b.log.clust+1) -log(testing.clust$bandgap_energy_ev+1))^2))
+mean.score.log.clust<- (percent.errors.f.log.clust+percent.errors.b.log.clust) /2
+paste0("Formation score is ",percent.errors.f.log.clust)
+paste0("Bandgap score is ",percent.errors.b.log.clust)
+paste0("Total score is ",mean.score.log.clust)
+
+
+```
+
+
+## Regression with clusters and interactions (with stepwise)
+
+```{r echo=FALSE}
+knitr::kable(round(my_summary(materials.data.train),2))
+
+install.packages("miceadds")
+install.packages("multiwayvcov")
+library(miceadds)
+library(multiwayvcov)
+library(mitools)
+
+#Run model and plot results [formation]
+fit.f.log.clust.interact<-glm(log(formation_energy_ev_natom+1)~
+                              (spacegroup+number_of_total_atoms+percent_atom_al+percent_atom_ga+percent_atom_in
+                              +lattice_vector_1_ang+lattice_vector_2_ang+lattice_vector_3_ang
+                              +lattice_angle_alpha_degree+lattice_angle_beta_degree+lattice_angle_gamma_degree)^2
+                              -bandgap_energy_ev-id-formation_energy_pred 
+                              +cluster_gamma*lattice_angle_gamma_degree + cluster_gamma*I(lattice_angle_gamma_degree^2) - cluster_gamma
+                              ,data=training.clust, family=gaussian(link = "identity"))
+predicted.f.log.clust.interact<-exp(predict(fit.f.log.clust.interact,testing.clust) )-1
+plot(predicted.f.log.clust.interact ~ testing.clust$formation_energy_ev_natom)
+training.clust$formation_energy_pred <- predict(fit.f.log.clust.interact, newdata = training.clust)
+testing.clust$formation_energy_pred <- predict(fit.f.log.clust.interact, newdata = testing.clust)
+
+summary(fit.f.log.clust.interact)
+
+#Run model and plot results [bandgap]
+fit.b.log.clust.interact<-glm(log(bandgap_energy_ev+1)~
+                              (spacegroup+number_of_total_atoms+percent_atom_al+percent_atom_ga+percent_atom_in
+                              +lattice_vector_1_ang+lattice_vector_2_ang+lattice_vector_3_ang
+                              +lattice_angle_alpha_degree+lattice_angle_beta_degree+lattice_angle_gamma_degree
+                              +formation_energy_pred)^2
+                              +cluster_gamma*lattice_angle_gamma_degree + cluster_gamma*I(lattice_angle_gamma_degree^2) - cluster_gamma
+                              ,data=training.clust, family=gaussian(link = "identity"))
+predicted.b.log.clust.interact<-exp(predict(fit.b.log.clust.interact,testing.clust) )-1
+plot(predicted.b.log.clust.interact ~ testing.clust$bandgap_energy_ev)
+
+#Calculate and show percentage error [without AIC]
+percent.errors.f.log.clust.interact <- sqrt(mean((log(predicted.f.log.clust.interact+1) -log(testing.clust$formation_energy_ev_natom+1))^2))
+percent.errors.b.log.clust.interact <- sqrt(mean((log(predicted.b.log.clust.interact+1) -log(testing.clust$bandgap_energy_ev+1))^2))
+mean.score.log.clust.interact<- (percent.errors.f.log.clust.interact+percent.errors.b.log.clust.interact) /2
+paste0("Formation score is ",percent.errors.f.log.clust.interact)
+paste0("Bandgap score is ",percent.errors.b.log.clust.interact)
+paste0("Total score is ",mean.score.log.clust.interact)
+
+#Run AIC on model [formation]
+fit.f.log.clust.interact.AIC<-stepAIC(fit.f.log.clust.interact,direction = c("both"),trace = 1)
+predicted.f.log.clust.interac.AIC<-predict(fit.f.log.clust.interact.AIC,testing.clust) 
+plot(predicted.f.log.clust.interact.AIC ~ testing.clust$formation_energy_ev_natom)
+
+#Run AIC on model [bandgap]
+fit.b.log.clust.interact.AIC<-stepAIC(fit.b.log.clust.interact,direction = c("both"),trace = 1)
+predicted.b.log.clust.interac.AIC<-predict(fit.b.log.clust.interact.AIC,testing.clust) 
+plot(predicted.b.log.clust.interac.AIC ~ testing.clust$bandgap_energy_ev)
+
+#Calculate and show percentage error [with AIC]
+percent.errors.f.log.clust.interact.AIC <- sqrt(mean((log(predicted.f.log.clust.interact.AIC+1) -log(testing.clust$formation_energy_ev_natom+1))^2))
+percent.errors.b.log.clust.interact.AIC <- sqrt(mean((log(predicted.b.log.clust.interact.AIC+1) -log(testing.clust$bandgap_energy_ev+1))^2))
+mean.score.log.clust.interact.AIC<- (percent.errors.f.log.clust.interact.AIC+percent.errors.b.log.clust.interact.AIC) /2
+paste0("Formation score is ",percent.errors.f.log.clust.interact.AIC)
+paste0("Bandgap score is ",percent.errors.b.log.clust.interact.AIC)
+paste0("Total score is ",mean.score.log.clust.interact.AIC)
+
+
+
+
+```
+
+# Prediction with Xboost (not as good)
+
+```{r echo=FALSE}
+#knitr::kable(round(my_summary(materials.data.train),2))
+
+install.packages("xgboost")
+library(xgboost)
+
+xgb.label.f <- log(training.clust$formation_energy_ev_natom+1)
+xgb.label.b <- log(training.clust$bandgap_energy_ev+1)
+
+xgb.data.train <- model.matrix(~ (spacegroup+number_of_total_atoms+percent_atom_al+percent_atom_ga+percent_atom_in
+            +lattice_vector_1_ang+lattice_vector_2_ang+lattice_vector_3_ang
+            +lattice_angle_alpha_degree+lattice_angle_beta_degree+lattice_angle_gamma_degree)^2
+            +cluster_gamma*lattice_angle_gamma_degree + cluster_gamma*I(lattice_angle_gamma_degree^2) - cluster_gamma, training.clust)
+
+xgb.data.test <- model.matrix(~ (spacegroup+number_of_total_atoms+percent_atom_al+percent_atom_ga+percent_atom_in
+             +lattice_vector_1_ang+lattice_vector_2_ang+lattice_vector_3_ang
+             +lattice_angle_alpha_degree+lattice_angle_beta_degree+lattice_angle_gamma_degree)^2
+             +cluster_gamma*lattice_angle_gamma_degree + cluster_gamma*I(lattice_angle_gamma_degree^2) - cluster_gamma, testing.clust)
+
+# Boost on formation
+fit.f.log.clust.interact.boost <- xgboost(data = xgb.data.train, label =xgb.label.f, objective = "reg:linear", nrounds=2000, verbose = 0,maximize=TRUE)
+predicted.f.log.clust.interact.boost<-exp(predict(fit.f.log.clust.interact.boost,xgb.data.test))-1
+plot(predicted.f.log.clust.interact.boost ~ testing.clust$formation_energy_ev_natom) # predict on which test set?
+
+xgb.data.train.df <- data.frame(xgb.data.train)
+xgb.data.train.df$formation_energy_pred <- exp(predict(fit.f.log.clust.interact.boost, newdata = xgb.data.train))-1
+xgb.data.train <- as.matrix(xgb.data.train.df)
+
+xgb.data.test.df <- data.frame(xgb.data.test)
+xgb.data.test.df$formation_energy_pred <- exp(predict(fit.f.log.clust.interact.boost, newdata = xgb.data.test))-1
+xgb.data.test <- as.matrix(xgb.data.test.df)
+
+# Boost on bandgap
+fit.b.log.clust.interact.boost <- xgboost(data = xgb.data.train, label =xgb.label.b, objective = "reg:linear", nrounds=2000, verbose = 0,maximize=TRUE)
+predicted.b.log.clust.interact.boost<-exp(predict(fit.b.log.clust.interact.boost,xgb.data.test))-1
+plot(predicted.b.log.clust.interact.boost ~ testing.clust$bandgap_energy_ev)
+
+
+#Calculate and show percentage error [without Boost]
+percent.errors.f.log.clust.interact.boost <-
+          sqrt(mean((log(predicted.f.log.clust.interact.boost+1)-log(testing.clust$formation_energy_ev_natom+1))^2))
+percent.errors.b.log.clust.interact.boost <- 
+          sqrt(mean((log(predicted.b.log.clust.interact.boost+1) -log(testing.clust$bandgap_energy_ev+1))^2))
+mean.score.log.clust.interact.boost<- (percent.errors.f.log.clust.interact.boost+percent.errors.b.log.clust.interact.boost) /2
+paste0("Formation score is ",percent.errors.f.log.clust.interact.boost)
+paste0("Bandgap score is ",percent.errors.b.log.clust.interact.boost)
+paste0("Total score is ",mean.score.log.clust.interact.boost)
+
+
+
+```
+
+
